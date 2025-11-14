@@ -1,0 +1,8 @@
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: BUCKET_CLAIM_NAME
+  namespace: SAMPLE_APP_NAMESPACE
+spec:
+  generateBucketName: BUCKET_CLAIM_NAME
+  storageClassName: OBJECT_STORE_NAME-bucket

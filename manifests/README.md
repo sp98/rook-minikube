@@ -11,10 +11,10 @@ manifests/
 │   └── object-store-user.yaml    # CephObjectStoreUser definition
 │
 └── sample-apps/           # Sample application manifests
-    ├── go-s3-test/              # Go source files for S3 test app
-    │   ├── main.go              # Main Go application
-    │   └── go.mod               # Go module definition
-    ├── s3-test-configmap.yaml   # ConfigMap for Go app
+    ├── python-s3-test/          # Python source files for S3 test app
+    │   ├── test_s3.py           # Main Python application
+    │   └── requirements.txt     # Python dependencies
+    ├── s3-test-configmap.yaml   # ConfigMap for Python app
     ├── s3-test-job.yaml         # Job to run S3 tests
     └── s3-curl-pod.yaml         # Curl test pod
 ```
@@ -32,17 +32,17 @@ Creates a user for accessing the object store with S3-compatible credentials.
 
 ## Sample Apps
 
-### Go S3 Test Application
-A complete Go application that tests S3 operations:
+### Python S3 Test Application
+A complete Python application that tests S3 operations using boto3:
 - Creates buckets
 - Uploads and downloads objects
 - Lists buckets and objects
 - Verifies data integrity
 
 **Files:**
-- `go-s3-test/main.go` - Main application code
-- `go-s3-test/go.mod` - Go module dependencies
-- `s3-test-configmap.yaml` - Kubernetes ConfigMap containing the Go code
+- `python-s3-test/test_s3.py` - Main application code
+- `python-s3-test/requirements.txt` - Python dependencies (boto3)
+- `s3-test-configmap.yaml` - Kubernetes ConfigMap containing the Python code
 - `s3-test-job.yaml` - Kubernetes Job to run the tests
 
 ### Curl Test Pod
@@ -71,5 +71,5 @@ The following placeholders are replaced by the deployment script:
 - `OBJECT_STORE_NAME` - Object store name (default: my-store)
 - `OBJECT_STORE_USER` - Object store user name (default: my-user)
 - `SAMPLE_APP_NAMESPACE` - Sample app namespace (default: default)
-- `MAIN_GO_CONTENT` - Content of main.go file
-- `GO_MOD_CONTENT` - Content of go.mod file
+- `PYTHON_SCRIPT_CONTENT` - Content of test_s3.py file
+- `REQUIREMENTS_CONTENT` - Content of requirements.txt file
