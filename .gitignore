@@ -1,0 +1,19 @@
+# User-specific configuration
+config.env
+
+# Backup files
+*.bak
+
+# Temporary files
+/tmp/
+*.tar
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

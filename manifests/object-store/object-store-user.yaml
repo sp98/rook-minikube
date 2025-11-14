@@ -1,0 +1,8 @@
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStoreUser
+metadata:
+  name: OBJECT_STORE_USER
+  namespace: NAMESPACE
+spec:
+  store: OBJECT_STORE_NAME
+  displayName: "User for OBJECT_STORE_NAME"
