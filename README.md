@@ -19,9 +19,9 @@ rook-minikube/
     │   ├── object-store.yaml       # ObjectStore definition
     │   └── object-store-user.yaml  # ObjectStore user definition
     └── sample-apps/                # Sample application manifests
-        ├── go-s3-test/             # Go S3 test app source
-        │   ├── main.go             # Main application code
-        │   └── go.mod              # Go module definition
+        ├── python-s3-test/         # Python S3 test app source
+        │   ├── test_s3.py          # Main application code
+        │   └── requirements.txt    # Python dependencies
         ├── s3-test-configmap.yaml  # ConfigMap template
         ├── s3-test-job.yaml        # Job template
         └── s3-curl-pod.yaml        # Curl test pod template
@@ -41,7 +41,7 @@ Before running the installation script, ensure you have the following installed:
 
 If you want to build a custom Rook operator from source:
 
-- **podman** - Container engine (used instead of Docker)
+- **podman or docker** - Container engine (podman is used by default, configurable via CONTAINER_RUNTIME)
 - **Go** - Go programming language (1.21 or later)
 
 ## Installation
@@ -62,7 +62,9 @@ The script will:
 - Check prerequisites
 - Start Minikube with appropriate resources (4GB RAM, 2 CPUs, 2 extra disks, 1 node by default)
 - Deploy Rook operator
-- Deploy Rook Ceph cluster
+- Deploy Rook Ceph cluster (automatically selects appropriate configuration):
+  - **Single node** (1 node): Uses `cluster-test.yaml` (minimal configuration for testing)
+  - **Multi-node** (2+ nodes): Uses `cluster.yaml` (production-like configuration)
 - Deploy Rook toolbox for debugging
 - Show cluster status
 
@@ -94,7 +96,9 @@ The configuration file includes:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ROOK_VERSION` | `v1.14.9` | Rook version to install |
+| `ROOK_VERSION` | `v1.18.7` | Rook version to install |
+| `CEPH_VERSION` | `v18.2.0` | Ceph image version (e.g., v17.2.6, v18.2.0) |
+| `ROOK_CEPH_NAMESPACE` | `rook-ceph` | Namespace for Rook Ceph |
 | `ROOK_SOURCE_DIR` | `~/dev/go/src/github.com/rook/rook` | Path to Rook source code |
 | `USE_CUSTOM_BUILD` | `false` | Build from local source |
 | `CUSTOM_IMAGE_TAG` | `local-build` | Tag for custom images |
@@ -104,6 +108,7 @@ The configuration file includes:
 | `MINIKUBE_DISK_SIZE` | `20g` | Main disk size |
 | `MINIKUBE_EXTRA_DISKS` | `2` | Extra disks for Ceph |
 | `MINIKUBE_DRIVER` | `qemu` | Minikube driver |
+| `MINIKUBE_NETWORK` | `""` (empty) | Network name (optional) |
 
 **Note**: Environment variables passed on the command line will override values in `config.env`.
 
@@ -132,13 +137,57 @@ Configuration options:
 - `MINIKUBE_CPUS` - CPUs per node (default: 2)
 - `MINIKUBE_DISK_SIZE` - Main disk size (default: 20g)
 - `MINIKUBE_EXTRA_DISKS` - Number of extra disks for Ceph (default: 2)
+- `MINIKUBE_DRIVER` - Minikube driver (default: qemu)
+- `MINIKUBE_NETWORK` - Network name (default: empty, optional)
+
+### Custom Network Configuration
+
+To use a specific network for Minikube:
+
+```bash
+MINIKUBE_NETWORK=minikube ./install-rook-ceph.sh
+```
+
+Or combine with other options:
+
+```bash
+MINIKUBE_NODES=3 \
+MINIKUBE_NETWORK=rook-network \
+./install-rook-ceph.sh
+```
 
 ### Custom Rook Version
 
 To install a specific version of Rook:
 ```bash
-ROOK_VERSION=v1.14.9 ./install-rook-ceph.sh
+ROOK_VERSION=v1.18.7 ./install-rook-ceph.sh
 ```
+
+### Custom Ceph Version
+
+To use a specific Ceph image version in the cluster:
+```bash
+CEPH_VERSION=v17.2.6 ./install-rook-ceph.sh
+```
+
+Or combine with other options:
+```bash
+ROOK_VERSION=v1.18.7 \
+CEPH_VERSION=v18.2.0 \
+./install-rook-ceph.sh
+```
+
+The Ceph version will be automatically replaced in the cluster manifest (cluster.yaml or cluster-test.yaml) during deployment.
+
+### Custom Namespace
+
+To deploy Rook Ceph in a custom namespace:
+
+```bash
+ROOK_CEPH_NAMESPACE=my-rook ./install-rook-ceph.sh
+```
+
+This will create and use the specified namespace instead of the default `rook-ceph`. All subsequent scripts (object store deployment, cleanup, etc.) will automatically use this namespace when sourced from the same environment or config file.
 
 ### Building from Custom Rook Source
 
@@ -151,22 +200,24 @@ To build and deploy a custom Rook operator from your local source code:
 USE_CUSTOM_BUILD=true ./install-rook-ceph.sh
 ```
 
-3. Optional: Customize the source directory and image tag:
+3. Optional: Customize the source directory, image tag, and container runtime:
 ```bash
 USE_CUSTOM_BUILD=true \
 ROOK_SOURCE_DIR=~/my-rook-fork \
 CUSTOM_IMAGE_TAG=my-custom-build \
+CONTAINER_RUNTIME=docker \
 ./install-rook-ceph.sh
 ```
 
 The script will:
-- Detect your architecture (ARM64 for Mac M2 or AMD64)
-- Build the Rook operator binary for Linux
-- Build a container image using podman
+- Detect your OS (macOS or Linux) and architecture (ARM64/aarch64 or AMD64/x86_64)
+- Build the Rook operator binary for Linux with the correct architecture
+- Build a container image using your configured container runtime (podman by default, or docker)
+- Verify the image was created successfully
 - Load the image into Minikube
 - Deploy the custom operator image
 
-**Note**: This is designed to work on Mac M2 (ARM64) using podman. The build process will create a Linux ARM64 or AMD64 image as appropriate.
+**Note**: This works on both macOS (including M1/M2 ARM64) and Linux (x86_64/amd64 and aarch64/arm64) with either podman or docker as the container runtime.
 
 ## Verification
 
@@ -182,6 +233,8 @@ kubectl -n rook-ceph exec -it deploy/rook-ceph-tools -- ceph status
 # Check Ceph health
 kubectl -n rook-ceph exec -it deploy/rook-ceph-tools -- ceph health
 ```
+
+**Note**: The default namespace is `rook-ceph`. If you customize it using `ROOK_CEPH_NAMESPACE`, replace `rook-ceph` with your custom namespace in the commands above.
 
 ## Accessing Ceph Dashboard
 
@@ -292,7 +345,7 @@ Then access at: `http://localhost:8080`
 
 The deployment script creates two sample applications:
 
-1. **Go S3 Test Job** - Automatically tests S3 operations using AWS SDK for Go:
+1. **Python S3 Test Job** - Automatically tests S3 operations using boto3 (AWS SDK for Python):
    - Creates a bucket
    - Uploads a test file
    - Lists buckets and objects
@@ -303,7 +356,7 @@ The deployment script creates two sample applications:
    kubectl -n default logs -f job/s3-test-job
    ```
 
-   The Go application uses the official AWS SDK for Go (aws-sdk-go) to interact with the S3-compatible API.
+   The Python application uses boto3, the official AWS SDK for Python, to interact with the S3-compatible API.
 
 2. **Curl Test Pod** - For manual S3 testing:
    ```bash
@@ -324,6 +377,30 @@ aws configure set aws_access_key_id <ACCESS_KEY>
 aws configure set aws_secret_access_key <SECRET_KEY>
 aws --endpoint-url http://localhost:8080 s3 ls
 aws --endpoint-url http://localhost:8080 s3 mb s3://my-bucket
+```
+
+**Python boto3 Example:**
+```python
+import boto3
+
+s3 = boto3.client(
+    's3',
+    endpoint_url='http://localhost:8080',
+    aws_access_key_id='<ACCESS_KEY>',
+    aws_secret_access_key='<SECRET_KEY>',
+    region_name='us-east-1',
+    use_ssl=False
+)
+
+# List buckets
+response = s3.list_buckets()
+print(response['Buckets'])
+
+# Create bucket
+s3.create_bucket(Bucket='my-bucket')
+
+# Upload file
+s3.put_object(Bucket='my-bucket', Key='test.txt', Body=b'Hello World')
 ```
 
 **Go (aws-sdk-go) Example:**
@@ -350,22 +427,6 @@ func main() {
     result, _ := svc.ListBuckets(&s3.ListBucketsInput{})
     // Use result...
 }
-```
-
-**Python boto3 Example:**
-```python
-import boto3
-
-s3 = boto3.client(
-    's3',
-    endpoint_url='http://localhost:8080',
-    aws_access_key_id='<ACCESS_KEY>',
-    aws_secret_access_key='<SECRET_KEY>'
-)
-
-# List buckets
-response = s3.list_buckets()
-print(response['Buckets'])
 ```
 
 ### Cleanup Object Store
@@ -406,7 +467,7 @@ spec:
 ```
 
 **Customize Sample App:**
-Edit `manifests/sample-apps/go-s3-test/main.go` to add custom S3 operations.
+Edit `manifests/sample-apps/python-s3-test/test_s3.py` to add custom S3 operations.
 
 **Direct Manifest Usage:**
 You can also apply manifests directly:

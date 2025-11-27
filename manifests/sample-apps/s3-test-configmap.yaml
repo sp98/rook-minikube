@@ -4,7 +4,7 @@ metadata:
   name: s3-test-script
   namespace: SAMPLE_APP_NAMESPACE
 data:
-  main.go: |
-    MAIN_GO_CONTENT
-  go.mod: |
-    GO_MOD_CONTENT
+  test_s3.py: |
+    PYTHON_SCRIPT_CONTENT
+  requirements.txt: |
+    REQUIREMENTS_CONTENT

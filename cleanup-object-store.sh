@@ -11,7 +11,7 @@ NC='\033[0m' # No Color
 # Configuration
 OBJECT_STORE_NAME=${OBJECT_STORE_NAME:-"my-store"}
 OBJECT_STORE_USER=${OBJECT_STORE_USER:-"my-user"}
-NAMESPACE=${NAMESPACE:-"rook-ceph"}
+ROOK_CEPH_NAMESPACE=${ROOK_CEPH_NAMESPACE:-"rook-ceph"}
 SAMPLE_APP_NAMESPACE=${SAMPLE_APP_NAMESPACE:-"default"}
 
 # Function to print colored messages
@@ -50,7 +50,7 @@ cleanup_sample_apps() {
 delete_object_store_user() {
     print_info "Deleting object store user: $OBJECT_STORE_USER..."
 
-    kubectl -n $NAMESPACE delete cephobjectstoreuser $OBJECT_STORE_USER 2>/dev/null || print_warn "User not found"
+    kubectl -n $ROOK_CEPH_NAMESPACE delete cephobjectstoreuser $OBJECT_STORE_USER 2>/dev/null || print_warn "User not found"
 
     print_info "Object store user deleted!"
 }
@@ -59,7 +59,7 @@ delete_object_store_user() {
 delete_object_store() {
     print_info "Deleting object store: $OBJECT_STORE_NAME..."
 
-    kubectl -n $NAMESPACE delete cephobjectstore $OBJECT_STORE_NAME 2>/dev/null || print_warn "Object store not found"
+    kubectl -n $ROOK_CEPH_NAMESPACE delete cephobjectstore $OBJECT_STORE_NAME 2>/dev/null || print_warn "Object store not found"
 
     print_info "Waiting for RGW pods to terminate..."
     sleep 10
@@ -84,9 +84,9 @@ main() {
     print_info "Cleanup complete!"
     echo ""
     echo "To verify cleanup:"
-    echo "  kubectl -n $NAMESPACE get cephobjectstore"
-    echo "  kubectl -n $NAMESPACE get cephobjectstoreuser"
-    echo "  kubectl -n $NAMESPACE get pods -l app=rook-ceph-rgw"
+    echo "  kubectl -n $ROOK_CEPH_NAMESPACE get cephobjectstore"
+    echo "  kubectl -n $ROOK_CEPH_NAMESPACE get cephobjectstoreuser"
+    echo "  kubectl -n $ROOK_CEPH_NAMESPACE get pods -l app=rook-ceph-rgw"
 }
 
 # Run main function

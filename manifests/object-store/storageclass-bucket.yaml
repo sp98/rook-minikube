@@ -1,0 +1,9 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: OBJECT_STORE_NAME-bucket
+provisioner: NAMESPACE.ceph.rook.io/bucket
+parameters:
+  objectStoreName: OBJECT_STORE_NAME
+  objectStoreNamespace: NAMESPACE
+reclaimPolicy: Delete
