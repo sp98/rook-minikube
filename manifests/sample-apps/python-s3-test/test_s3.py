@@ -8,6 +8,10 @@ import os
 import sys
 import boto3
 from botocore.exceptions import ClientError
+import urllib3
+
+# Disable SSL warnings when using self-signed certificates
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 def main():
@@ -15,6 +19,7 @@ def main():
     endpoint = os.getenv("S3_ENDPOINT")
     access_key = os.getenv("S3_ACCESS_KEY")
     secret_key = os.getenv("S3_SECRET_KEY")
+    use_tls = os.getenv("S3_USE_TLS", "false").lower() == "true"
 
     if not all([endpoint, access_key, secret_key]):
         print("✗ Missing required environment variables")
@@ -22,6 +27,7 @@ def main():
         sys.exit(1)
 
     print(f"Connecting to S3 endpoint: {endpoint}")
+    print(f"TLS enabled: {use_tls}")
 
     # Create S3 client
     try:
@@ -31,8 +37,8 @@ def main():
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
             region_name='us-east-1',
-            use_ssl=False,
-            verify=False
+            use_ssl=use_tls,
+            verify=False  # Skip certificate verification for self-signed certs
         )
     except Exception as e:
         print(f"✗ Failed to create S3 client: {e}")

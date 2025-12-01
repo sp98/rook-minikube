@@ -17,12 +17,21 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Load config.env if exists
+if [ -f "$SCRIPT_DIR/config.env" ]; then
+    print_info "Loading configuration from config.env..."
+    source "$SCRIPT_DIR/config.env"
+fi
+
 # Configuration
 OBJECT_STORE_NAME=${OBJECT_STORE_NAME:-"my-store"}
 OBJECT_STORE_USER=${OBJECT_STORE_USER:-"my-user"}
 BUCKET_CLAIM_NAME=${BUCKET_CLAIM_NAME:-"my-bucket"}
 ROOK_CEPH_NAMESPACE=${ROOK_CEPH_NAMESPACE:-"rook-ceph"}
 SAMPLE_APP_NAMESPACE=${SAMPLE_APP_NAMESPACE:-"default"}
+ENABLE_TLS=${ENABLE_TLS:-"false"}
+TLS_CERT_DOMAIN=${TLS_CERT_DOMAIN:-"rook-ceph-rgw-my-store.rook-ceph.svc"}
+TLS_CERT_DAYS=${TLS_CERT_DAYS:-"365"}
 
 # Function to print colored messages
 print_info() {
@@ -118,15 +127,75 @@ wait_for_rgw_pods() {
     return 1
 }
 
+# Generate TLS certificate
+generate_tls_certificate() {
+    print_header "Generating TLS Certificate"
+
+    print_info "Generating self-signed certificate for domain: $TLS_CERT_DOMAIN"
+
+    # Create temporary directory for certificates
+    local cert_dir="/tmp/rgw-certs"
+    mkdir -p "$cert_dir"
+
+    # Generate private key
+    openssl genrsa -out "$cert_dir/tls.key" 2048
+
+    # Generate certificate
+    openssl req -new -x509 \
+        -key "$cert_dir/tls.key" \
+        -out "$cert_dir/tls.crt" \
+        -days "$TLS_CERT_DAYS" \
+        -subj "/CN=$TLS_CERT_DOMAIN" \
+        -addext "subjectAltName=DNS:$TLS_CERT_DOMAIN,DNS:*.rook-ceph.svc,DNS:*.rook-ceph.svc.cluster.local,DNS:localhost,IP:127.0.0.1"
+
+    # Save certificate to local directory for user reference
+    local ca_cert_path="$SCRIPT_DIR/rgw-ca-cert.pem"
+    cp "$cert_dir/tls.crt" "$ca_cert_path"
+    print_info "CA certificate saved to: $ca_cert_path"
+
+    # Base64 encode the certificate and key
+    local cert_base64=$(cat "$cert_dir/tls.crt" | base64 | tr -d '\n')
+    local key_base64=$(cat "$cert_dir/tls.key" | base64 | tr -d '\n')
+
+    # Create secret manifest
+    print_info "Creating TLS secret manifest..."
+    sed -e "s/OBJECT_STORE_NAME/$OBJECT_STORE_NAME/g" \
+        -e "s/NAMESPACE/$ROOK_CEPH_NAMESPACE/g" \
+        -e "s|TLS_CERT_BASE64|$cert_base64|g" \
+        -e "s|TLS_KEY_BASE64|$key_base64|g" \
+        "$SCRIPT_DIR/manifests/object-store/object-store-tls-cert.yaml" > /tmp/object-store-tls-cert.yaml
+
+    print_info "Applying TLS secret..."
+    kubectl apply -f /tmp/object-store-tls-cert.yaml
+
+    # Clean up temporary certificates
+    rm -rf "$cert_dir"
+
+    print_info "TLS certificate generated and applied successfully!"
+}
+
 # Deploy CephObjectStore
 deploy_object_store() {
     print_header "Deploying CephObjectStore: $OBJECT_STORE_NAME"
+
+    # Choose manifest based on TLS configuration
+    local manifest_file
+    if [ "$ENABLE_TLS" = "true" ]; then
+        print_info "TLS is enabled. Using TLS-enabled manifest..."
+        manifest_file="$SCRIPT_DIR/manifests/object-store/object-store-with-tls.yaml"
+
+        # Generate TLS certificate first
+        generate_tls_certificate
+    else
+        print_info "TLS is disabled. Using standard manifest..."
+        manifest_file="$SCRIPT_DIR/manifests/object-store/object-store.yaml"
+    fi
 
     # Use manifest from manifests directory and substitute variables
     print_info "Preparing CephObjectStore manifest..."
     sed -e "s/OBJECT_STORE_NAME/$OBJECT_STORE_NAME/g" \
         -e "s/NAMESPACE/$ROOK_CEPH_NAMESPACE/g" \
-        "$SCRIPT_DIR/manifests/object-store/object-store.yaml" > /tmp/object-store.yaml
+        "$manifest_file" > /tmp/object-store.yaml
 
     print_info "Applying CephObjectStore manifest..."
     kubectl apply -f /tmp/object-store.yaml
@@ -278,6 +347,9 @@ get_bucket_credentials() {
     echo "export BUCKET_NAME=${OBC_BUCKET:-$BUCKET_NAME}"
     echo "export AWS_ACCESS_KEY_ID=${OBC_ACCESS_KEY}"
     echo "export AWS_SECRET_ACCESS_KEY=${OBC_SECRET_KEY}"
+    if [ "$ENABLE_TLS" = "true" ]; then
+        echo "export AWS_CA_BUNDLE=${SCRIPT_DIR}/rgw-ca-cert.pem"
+    fi
     echo ""
 
 }
@@ -291,21 +363,29 @@ get_credentials() {
     ENDPOINT=$(kubectl -n $ROOK_CEPH_NAMESPACE get svc rook-ceph-rgw-$OBJECT_STORE_NAME -o jsonpath='{.spec.clusterIP}')
     PORT=$(kubectl -n $ROOK_CEPH_NAMESPACE get svc rook-ceph-rgw-$OBJECT_STORE_NAME -o jsonpath='{.spec.ports[0].port}')
 
+    # Determine protocol based on TLS setting
+    local protocol="http"
+    if [ "$ENABLE_TLS" = "true" ]; then
+        protocol="https"
+    fi
+
     # Get access key and secret key
     print_info "Getting access credentials..."
     ACCESS_KEY=$(kubectl -n $ROOK_CEPH_NAMESPACE get secret rook-ceph-object-user-$OBJECT_STORE_NAME-$OBJECT_STORE_USER -o jsonpath='{.data.AccessKey}' | base64 --decode)
     SECRET_KEY=$(kubectl -n $ROOK_CEPH_NAMESPACE get secret rook-ceph-object-user-$OBJECT_STORE_NAME-$OBJECT_STORE_USER -o jsonpath='{.data.SecretKey}' | base64 --decode)
 
     echo ""
-    echo -e "${GREEN}S3 Endpoint:${NC} http://${ENDPOINT}:${PORT}"
+    echo -e "${GREEN}S3 Endpoint:${NC} ${protocol}://${ENDPOINT}:${PORT}"
+    echo -e "${GREEN}TLS Enabled:${NC} ${ENABLE_TLS}"
     echo -e "${GREEN}Access Key:${NC}  ${ACCESS_KEY}"
     echo -e "${GREEN}Secret Key:${NC}  ${SECRET_KEY}"
     echo ""
 
     # Export for use in sample apps
-    export S3_ENDPOINT="http://${ENDPOINT}:${PORT}"
+    export S3_ENDPOINT="${protocol}://${ENDPOINT}:${PORT}"
     export S3_ACCESS_KEY="${ACCESS_KEY}"
     export S3_SECRET_KEY="${SECRET_KEY}"
+    export S3_USE_TLS="${ENABLE_TLS}"
 }
 
 # Deploy sample Python S3 app
@@ -321,6 +401,7 @@ deploy_sample_app() {
         --from-literal=endpoint="$S3_ENDPOINT" \
         --from-literal=access-key="$S3_ACCESS_KEY" \
         --from-literal=secret-key="$S3_SECRET_KEY" \
+        --from-literal=use-tls="$S3_USE_TLS" \
         --dry-run=client -o yaml | kubectl apply -f -
 
     # Read Python source files
@@ -405,8 +486,35 @@ show_usage() {
     echo "  kubectl -n $ROOK_CEPH_NAMESPACE get secret rook-ceph-object-user-$OBJECT_STORE_NAME-$OBJECT_STORE_USER -o yaml"
     echo ""
     echo "To access S3 endpoint from outside the cluster:"
-    echo "  kubectl -n $ROOK_CEPH_NAMESPACE port-forward svc/rook-ceph-rgw-$OBJECT_STORE_NAME 8080:80"
-    echo "  Then use: http://localhost:8080"
+    if [ "$ENABLE_TLS" = "true" ]; then
+        echo "  kubectl -n $ROOK_CEPH_NAMESPACE port-forward svc/rook-ceph-rgw-$OBJECT_STORE_NAME 8443:443"
+        echo "  Then use: https://localhost:8443"
+        echo ""
+        echo "TLS Certificate Information:"
+        echo "  CA certificate location: $SCRIPT_DIR/rgw-ca-cert.pem"
+        echo ""
+        echo "  To use with AWS CLI (skip verification):"
+        echo "    aws s3 ls --endpoint-url https://localhost:8443 --no-verify-ssl"
+        echo ""
+        echo "  To use with AWS CLI (with CA cert):"
+        echo "    aws s3 ls --endpoint-url https://localhost:8443 --ca-bundle $SCRIPT_DIR/rgw-ca-cert.pem"
+        echo ""
+        echo "  To use with curl (skip verification):"
+        echo "    curl -k https://localhost:8443"
+        echo ""
+        echo "  To use with curl (with CA cert):"
+        echo "    curl --cacert $SCRIPT_DIR/rgw-ca-cert.pem https://localhost:8443"
+        echo ""
+        echo "  To trust the certificate system-wide (macOS):"
+        echo "    sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain $SCRIPT_DIR/rgw-ca-cert.pem"
+        echo ""
+        echo "  To trust the certificate system-wide (Linux):"
+        echo "    sudo cp $SCRIPT_DIR/rgw-ca-cert.pem /usr/local/share/ca-certificates/rgw-ca-cert.crt"
+        echo "    sudo update-ca-certificates"
+    else
+        echo "  kubectl -n $ROOK_CEPH_NAMESPACE port-forward svc/rook-ceph-rgw-$OBJECT_STORE_NAME 8080:80"
+        echo "  Then use: http://localhost:8080"
+    fi
     echo ""
     echo "Sample app logs:"
     echo "  kubectl -n $SAMPLE_APP_NAMESPACE logs -f job/s3-test-job"
