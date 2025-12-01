@@ -32,6 +32,11 @@ spec:
             secretKeyRef:
               name: s3-credentials
               key: secret-key
+        - name: S3_USE_TLS
+          valueFrom:
+            secretKeyRef:
+              name: s3-credentials
+              key: use-tls
         volumeMounts:
         - name: app
           mountPath: /app

@@ -20,6 +20,8 @@ NC='\033[0m' # No Color
 # Rook version
 ROOK_VERSION=${ROOK_VERSION:-"v1.18.7"}
 
+BUILD_REGISTRY=${BUILD_REGISTRY:-"local"}
+
 # Ceph version (image tag)
 CEPH_VERSION=${CEPH_VERSION:-"v19.2.3"}
 
@@ -126,7 +128,7 @@ build_custom_rook_operator() {
 
     # Build using podman
     print_info "Building rook-ceph operator image using $CONTAINER_RUNTIME..."
-    make BUILD_CONTAINER_IMAGE=rook/ceph:${CUSTOM_IMAGE_TAG} IMAGES="ceph" build.all || {
+    make BUILD_REGISTRY=${BUILD_REGISTRY} IMAGES="ceph" build.all || {
         # If that fails, try the manual approach
         print_warn "Automated build failed, trying manual build..."
 
@@ -150,6 +152,8 @@ build_custom_rook_operator() {
         }
         cd ../..
     }
+
+    $CONTAINER_RUNTIME tag "$BUILD_REGISTRY/ceph-$ARCH" rook/ceph:${CUSTOM_IMAGE_TAG}
 
     print_info "Custom Rook operator built successfully with tag: rook/ceph:${CUSTOM_IMAGE_TAG}"
 

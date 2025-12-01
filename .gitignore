@@ -1,6 +1,9 @@
 # User-specific configuration
 config.env
 
+# TLS certificates (auto-generated)
+rgw-ca-cert.pem
+
 # Backup files
 *.bak
 
