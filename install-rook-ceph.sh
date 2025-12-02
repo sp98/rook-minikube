@@ -48,6 +48,10 @@ CONTAINER_RUNTIME=${CONTAINER_RUNTIME:-"podman"}
 # - pvc: OSDs use PersistentVolumeClaims
 OSD_TYPE=${OSD_TYPE:-"disk"}
 
+# Prometheus monitoring
+ENABLE_PROMETHEUS=${ENABLE_PROMETHEUS:-"false"}
+PROMETHEUS_OPERATOR_VERSION=${PROMETHEUS_OPERATOR_VERSION:-"v0.82.0"}
+
 # Minikube configuration
 MINIKUBE_NODES=${MINIKUBE_NODES:-1}
 MINIKUBE_MEMORY=${MINIKUBE_MEMORY:-4096}
@@ -408,6 +412,21 @@ deploy_ceph_cluster() {
         sed -i.bak "s|image: quay.io/ceph/ceph:v[0-9.]*|image: quay.io/ceph/ceph:${CEPH_VERSION}|g" /tmp/cluster.yaml
     fi
 
+    # Enable Prometheus module if monitoring is enabled
+    if [ "$ENABLE_PROMETHEUS" = "true" ]; then
+        print_info "Enabling Prometheus module in CephCluster..."
+        # Check if monitoring section exists
+        if grep -q "monitoring:" /tmp/cluster.yaml; then
+            # Monitoring section exists, ensure enabled: true
+            sed -i.bak '/monitoring:/,/enabled:/ s/enabled: false/enabled: true/' /tmp/cluster.yaml
+        else
+            # Add monitoring section after spec:
+            sed -i.bak '/^spec:/a\
+  monitoring:\
+    enabled: true' /tmp/cluster.yaml
+        fi
+    fi
+
     # Apply the cluster
     print_info "Applying cluster manifest..."
     kubectl apply -f /tmp/cluster.yaml
@@ -435,6 +454,73 @@ deploy_toolbox() {
     kubectl -n $ROOK_CEPH_NAMESPACE wait --for=condition=ready pod -l app=rook-ceph-tools --timeout=300s
 
     print_info "Toolbox deployed successfully!"
+}
+
+# Deploy Prometheus Operator
+deploy_prometheus_operator() {
+    print_info "Deploying Prometheus Operator (version: ${PROMETHEUS_OPERATOR_VERSION})..."
+
+    # Deploy Prometheus Operator using bundle.yaml
+    print_info "Applying Prometheus Operator bundle..."
+    kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/${PROMETHEUS_OPERATOR_VERSION}/bundle.yaml --server-side
+ 
+    print_info "Waiting for Prometheus Operator to be ready..."
+    kubectl -n default wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus-operator --timeout=300s
+
+    print_info "Prometheus Operator deployed successfully!"
+}
+
+# Deploy Rook Monitoring Resources
+deploy_rook_monitoring() {
+    print_info "Deploying Rook monitoring resources..."
+
+    # Deploy ServiceMonitor for Ceph
+    print_info "Deploying ServiceMonitor..."
+    if [ "$USE_CUSTOM_BUILD" = "true" ] && [ -f "$ROOK_SOURCE_DIR/deploy/examples/monitoring/service-monitor.yaml" ]; then
+        kubectl apply -f "$ROOK_SOURCE_DIR/deploy/examples/monitoring/service-monitor.yaml"
+    else
+        kubectl apply -f https://raw.githubusercontent.com/rook/rook/${ROOK_VERSION}/deploy/examples/monitoring/service-monitor.yaml
+    fi
+
+    # Deploy ServiceMonitor for Ceph
+    print_info "Deploying exportor ServiceMonitor..."
+    if [ "$USE_CUSTOM_BUILD" = "true" ] && [ -f "$ROOK_SOURCE_DIR/deploy/examples/monitoring/exporter-service-monitor.yaml" ]; then
+        kubectl apply -f "$ROOK_SOURCE_DIR/deploy/examples/monitoring/exporter-service-monitor.yaml"
+    else
+        kubectl apply -f https://raw.githubusercontent.com/rook/rook/${ROOK_VERSION}/deploy/examples/monitoring/exporter-service-monitor.yaml
+    fi
+
+    # Deploy Prometheus instance
+    print_info "Deploying Prometheus instance..."
+    if [ "$USE_CUSTOM_BUILD" = "true" ] && [ -f "$ROOK_SOURCE_DIR/deploy/examples/monitoring/prometheus.yaml" ]; then
+        kubectl apply -f "$ROOK_SOURCE_DIR/deploy/examples/monitoring/prometheus.yaml"
+    else
+        kubectl apply -f https://raw.githubusercontent.com/rook/rook/${ROOK_VERSION}/deploy/examples/monitoring/prometheus.yaml
+    fi
+
+    # Deploy ServiceMonitor for Ceph
+    print_info "Deploying promethus service ..."
+    if [ "$USE_CUSTOM_BUILD" = "true" ] && [ -f "$ROOK_SOURCE_DIR/deploy/examples/monitoring/prometheus-service.yaml" ]; then
+        kubectl apply -f "$ROOK_SOURCE_DIR/deploy/examples/monitoring/prometheus-service.yaml"
+    else
+        kubectl apply -f https://raw.githubusercontent.com/rook/rook/${ROOK_VERSION}/deploy/examples/monitoring/prometheus-service.yaml
+    fi
+
+    # Deploy PrometheusRule for Ceph alerts
+    print_info "Deploying Ceph PrometheusRule..."
+    if [ "$USE_CUSTOM_BUILD" = "true" ] && [ -f "$ROOK_SOURCE_DIR/deploy/examples/monitoring/localrules.yaml" ]; then
+        kubectl apply -f "$ROOK_SOURCE_DIR/deploy/examples/monitoring/localrules.yaml"
+    else
+        kubectl apply -f https://raw.githubusercontent.com/rook/rook/${ROOK_VERSION}/deploy/examples/monitoring/localrules.yaml
+    fi
+
+    print_info "Waiting for Prometheus pods to be ready..."
+    kubectl -n $ROOK_CEPH_NAMESPACE wait --for=condition=ready pod -l app.kubernetes.io/name=prometheus --timeout=300s
+
+    print_info "Rook monitoring resources deployed successfully!"
+    echo ""
+    echo "To access Prometheus, run:"
+    echo "  kubectl -n $ROOK_CEPH_NAMESPACE port-forward service/prometheus-operated 9090:9090"
 }
 
 # Show cluster status
@@ -476,6 +562,14 @@ main() {
     deploy_ceph_cluster
     deploy_toolbox
     wait_for_ceph_health
+
+    # Deploy Prometheus monitoring if enabled
+    if [ "$ENABLE_PROMETHEUS" = "true" ]; then
+        print_info "Prometheus monitoring is enabled"
+        deploy_prometheus_operator
+        deploy_rook_monitoring
+    fi
+
     show_status
 }
 
