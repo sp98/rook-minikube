@@ -38,6 +38,16 @@ OSD_TYPE=pvc ./install-rook-ceph.sh
 OSD_TYPE=disk ./install-rook-ceph.sh
 ```
 
+**Enable Prometheus Monitoring:**
+```bash
+# Install with Prometheus monitoring enabled
+ENABLE_PROMETHEUS=true ./install-rook-ceph.sh
+```
+When enabled, this will:
+- Deploy Prometheus Operator in the default namespace
+- Deploy Rook monitoring resources (ServiceMonitors, Prometheus instance, PrometheusRules)
+- Enable the Prometheus module in the CephCluster CR to expose Ceph metrics
+
 **Deploy Object Store:**
 ```bash
 ./deploy-object-store.sh
@@ -104,9 +114,10 @@ The `install-rook-ceph.sh` script follows this flow:
 2. **Start Minikube** - Creates cluster with extra disks for Ceph OSDs
 3. **Custom Build (optional)** - Builds Rook operator from local source if USE_CUSTOM_BUILD=true
 4. **Deploy Rook Operator** - Applies CRDs, common resources, CSI operator, and operator deployment
-5. **Deploy Ceph Cluster** - Applies cluster manifest (cluster-test.yaml or cluster.yaml based on node count)
+5. **Deploy Ceph Cluster** - Applies cluster manifest (cluster-test.yaml or cluster.yaml based on node count), enables Prometheus module if ENABLE_PROMETHEUS=true
 6. **Deploy Toolbox** - Deploys debugging toolbox
-7. **Show Status** - Displays cluster health
+7. **Deploy Prometheus (optional)** - If ENABLE_PROMETHEUS=true, deploys Prometheus Operator and Rook monitoring resources
+8. **Show Status** - Displays cluster health
 
 ### Cluster Configuration Selection
 
@@ -194,6 +205,14 @@ When deploying cluster, the script downloads the cluster manifest from Rook GitH
 ```bash
 sed -i.bak "s|image: quay.io/ceph/ceph:v[0-9.]*|image: quay.io/ceph/ceph:${CEPH_VERSION}|g" /tmp/cluster.yaml
 ```
+
+### Prometheus Module Enablement
+
+When `ENABLE_PROMETHEUS=true`, the `deploy_ceph_cluster` function automatically enables the Prometheus module in the CephCluster CR:
+1. After downloading the cluster manifest, it checks if a `monitoring:` section exists
+2. If the section exists, it changes `enabled: false` to `enabled: true`
+3. If no monitoring section exists, it adds one after `spec:` with `enabled: true`
+4. This ensures the Ceph mgr Prometheus module is activated to expose metrics for scraping
 
 ### Namespace Flexibility
 
