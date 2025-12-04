@@ -1,0 +1,11 @@
+apiVersion: ceph.rook.io/v1
+kind: CephCOSIDriver
+metadata:
+  name: ceph-cosi-driver
+  namespace: NAMESPACE
+spec:
+  # Deployment strategy for the COSI driver
+  # Auto: Automatically deploy the driver when a CephObjectStore is created
+  # Always: Always deploy the driver
+  # Never: Never deploy the driver
+  deploymentStrategy: "Auto"

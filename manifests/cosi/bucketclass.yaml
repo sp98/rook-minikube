@@ -1,0 +1,13 @@
+kind: BucketClass
+apiVersion: objectstorage.k8s.io/v1alpha1
+metadata:
+  name: BUCKET_CLASS_NAME
+driverName: rook-ceph.ceph.objectstorage.k8s.io
+# Deletion policy: Delete or Retain
+# Delete: Deletes the bucket when the BucketClaim is deleted
+# Retain: Retains the bucket when the BucketClaim is deleted
+deletionPolicy: Delete
+parameters:
+  # Reference to the CephObjectStoreUser secret
+  objectStoreUserSecretName: rook-ceph-object-user-OBJECT_STORE_NAME-COSI_USER
+  objectStoreUserSecretNamespace: NAMESPACE

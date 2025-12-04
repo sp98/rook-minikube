@@ -1,0 +1,12 @@
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStoreUser
+metadata:
+  name: COSI_USER
+  namespace: NAMESPACE
+spec:
+  displayName: "COSI User"
+  store: OBJECT_STORE_NAME
+  # COSI user needs full capabilities for bucket and user management
+  capabilities:
+    bucket: "*"
+    user: "*"

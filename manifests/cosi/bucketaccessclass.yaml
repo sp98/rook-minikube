@@ -1,0 +1,13 @@
+kind: BucketAccessClass
+apiVersion: objectstorage.k8s.io/v1alpha1
+metadata:
+  name: BUCKET_ACCESS_CLASS_NAME
+driverName: rook-ceph.ceph.objectstorage.k8s.io
+# Authentication type: KEY or IAM
+# KEY: Uses access key and secret key
+# IAM: Uses IAM roles (not currently supported by Ceph)
+authenticationType: KEY
+parameters:
+  # Reference to the CephObjectStoreUser secret
+  objectStoreUserSecretName: rook-ceph-object-user-OBJECT_STORE_NAME-COSI_USER
+  objectStoreUserSecretNamespace: NAMESPACE
