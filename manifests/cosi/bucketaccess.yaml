@@ -1,0 +1,14 @@
+kind: BucketAccess
+apiVersion: objectstorage.k8s.io/v1alpha1
+metadata:
+  name: BUCKET_ACCESS_NAME
+  namespace: SAMPLE_APP_NAMESPACE
+spec:
+  # Reference to the BucketClaim
+  bucketClaimName: BUCKET_CLAIM_NAME
+  # Reference to the BucketAccessClass
+  bucketAccessClassName: BUCKET_ACCESS_CLASS_NAME
+  # Protocols supported: s3
+  protocol: s3
+  # Secret where credentials will be stored
+  credentialsSecretName: BUCKET_SECRET_NAME
