@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cosi-s3-test-job
+  namespace: SAMPLE_APP_NAMESPACE
+spec:
+  ttlSecondsAfterFinished: 3600  # Clean up job after 1 hour
+  template:
+    metadata:
+      labels:
+        app: cosi-s3-test
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: cosi-s3-test
+        image: python:3.11-alpine
+        command:
+        - /bin/sh
+        - -c
+        - |
+          echo "Installing dependencies..."
+          pip install --no-cache-dir -r /scripts/requirements.txt
+          echo ""
+          echo "Running COSI S3 test..."
+          python /scripts/test_cosi_s3.py
+        volumeMounts:
+        # Mount the ConfigMap with Python scripts
+        - name: scripts
+          mountPath: /scripts
+          readOnly: true
+        # Mount the COSI secret at /data/cosi as per COSI specification
+        - name: cosi-bucket-info
+          mountPath: /data/cosi
+          readOnly: true
+      volumes:
+      # ConfigMap containing Python scripts
+      - name: scripts
+        configMap:
+          name: cosi-s3-test-scripts
+          defaultMode: 0755
+      # COSI secret containing BucketInfo
+      - name: cosi-bucket-info
+        secret:
+          secretName: COSI_SECRET_NAME
+          defaultMode: 0400

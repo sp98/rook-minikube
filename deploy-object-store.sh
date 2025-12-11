@@ -412,11 +412,23 @@ deploy_sample_app() {
     sed -e "s/SAMPLE_APP_NAMESPACE/$SAMPLE_APP_NAMESPACE/g" \
         "$SCRIPT_DIR/manifests/sample-apps/s3-test-configmap.yaml" > /tmp/s3-test-configmap-temp.yaml
 
-    # Replace content placeholders with actual Python code
-    awk -v python_script="$(cat "$SCRIPT_DIR/manifests/sample-apps/python-s3-test/test_s3.py")" \
-        '{gsub(/PYTHON_SCRIPT_CONTENT/, python_script); print}' /tmp/s3-test-configmap-temp.yaml | \
-    awk -v requirements="$(cat "$SCRIPT_DIR/manifests/sample-apps/python-s3-test/requirements.txt")" \
-        '{gsub(/REQUIREMENTS_CONTENT/, requirements); print}' > /tmp/s3-test-configmap.yaml
+    # Replace content placeholders with actual Python code (properly indented for YAML)
+    # Indent the Python script content with 4 spaces for YAML formatting
+    # Create temp files with indented content
+    sed 's/^/    /' "$SCRIPT_DIR/manifests/sample-apps/python-s3-test/test_s3.py" > /tmp/python_indented.tmp
+    sed 's/^/    /' "$SCRIPT_DIR/manifests/sample-apps/python-s3-test/requirements.txt" > /tmp/requirements_indented.tmp
+
+    # Use sed to replace placeholders with file contents (works on both macOS and Linux)
+    sed -e '/PYTHON_SCRIPT_CONTENT/{
+        r /tmp/python_indented.tmp
+        d
+    }' -e '/REQUIREMENTS_CONTENT/{
+        r /tmp/requirements_indented.tmp
+        d
+    }' /tmp/s3-test-configmap-temp.yaml > /tmp/s3-test-configmap.yaml
+
+    # Clean up temp files
+    rm -f /tmp/python_indented.tmp /tmp/requirements_indented.tmp
 
     kubectl apply -f /tmp/s3-test-configmap.yaml
 

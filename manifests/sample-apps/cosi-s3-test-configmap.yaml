@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cosi-s3-test-scripts
+  namespace: SAMPLE_APP_NAMESPACE
+data:
+  test_cosi_s3.py: |
+    PYTHON_SCRIPT_CONTENT
+  requirements.txt: |
+    REQUIREMENTS_CONTENT

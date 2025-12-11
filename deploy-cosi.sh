@@ -355,7 +355,7 @@ get_bucket_credentials() {
 
     # Get credentials from BucketAccess secret
     print_info "Getting bucket credentials from BucketAccess..."
-    SECRET_NAME=$(kubectl -n $SAMPLE_APP_NAMESPACE get bucketaccess $BUCKET_ACCESS_NAME -o jsonpath='{.status.credentialsSecretName}' 2>/dev/null || echo "")
+    SECRET_NAME=$(kubectl -n $SAMPLE_APP_NAMESPACE get bucketaccess $BUCKET_ACCESS_NAME -o jsonpath='{.spec.credentialsSecretName}' 2>/dev/null || echo "")
 
     if [ -n "$SECRET_NAME" ]; then
         # Decode the credentials JSON
@@ -390,6 +390,68 @@ get_bucket_credentials() {
     fi
 }
 
+# Deploy sample COSI S3 app
+deploy_cosi_sample_app() {
+    print_header "Deploying Sample COSI S3 Application (Python)"
+
+    # Get the COSI secret name from BucketAccess
+    print_info "Getting COSI secret name from BucketAccess..."
+    COSI_SECRET_NAME=$(kubectl -n $SAMPLE_APP_NAMESPACE get bucketaccess $BUCKET_ACCESS_NAME -o jsonpath='{.spec.credentialsSecretName}' 2>/dev/null || echo "")
+
+    if [ -z "$COSI_SECRET_NAME" ]; then
+        print_error "Failed to get COSI secret name from BucketAccess"
+        print_error "Make sure BucketAccess '$BUCKET_ACCESS_NAME' is ready"
+        return 1
+    fi
+
+    print_info "Using COSI secret: $COSI_SECRET_NAME"
+
+    # Create ConfigMap from template
+    print_info "Creating ConfigMap with Python code..."
+    sed -e "s/SAMPLE_APP_NAMESPACE/$SAMPLE_APP_NAMESPACE/g" \
+        "$SCRIPT_DIR/manifests/sample-apps/cosi-s3-test-configmap.yaml" > /tmp/cosi-s3-test-configmap-temp.yaml
+
+    # Replace content placeholders with actual Python code (properly indented for YAML)
+    # Indent the Python script content with 4 spaces for YAML formatting
+    # Create temp files with indented content
+    sed 's/^/    /' "$SCRIPT_DIR/manifests/sample-apps/python-cosi-test/test_cosi_s3.py" > /tmp/python_cosi_indented.tmp
+    sed 's/^/    /' "$SCRIPT_DIR/manifests/sample-apps/python-cosi-test/requirements.txt" > /tmp/requirements_cosi_indented.tmp
+
+    # Use sed to replace placeholders with file contents (works on both macOS and Linux)
+    sed -e '/PYTHON_SCRIPT_CONTENT/{
+        r /tmp/python_cosi_indented.tmp
+        d
+    }' -e '/REQUIREMENTS_CONTENT/{
+        r /tmp/requirements_cosi_indented.tmp
+        d
+    }' /tmp/cosi-s3-test-configmap-temp.yaml > /tmp/cosi-s3-test-configmap.yaml
+
+    # Clean up temp files
+    rm -f /tmp/python_cosi_indented.tmp /tmp/requirements_cosi_indented.tmp
+
+    kubectl apply -f /tmp/cosi-s3-test-configmap.yaml
+
+    # Create Job from template
+    print_info "Creating Job manifest..."
+    sed -e "s/SAMPLE_APP_NAMESPACE/$SAMPLE_APP_NAMESPACE/g" \
+        -e "s/COSI_SECRET_NAME/$COSI_SECRET_NAME/g" \
+        "$SCRIPT_DIR/manifests/sample-apps/cosi-s3-test-job.yaml" > /tmp/cosi-s3-test-job.yaml
+
+    print_info "Deploying sample COSI S3 test application..."
+    kubectl apply -f /tmp/cosi-s3-test-job.yaml
+
+    print_info "Waiting for job to start..."
+    sleep 5
+
+    print_info "Watching job logs (Ctrl+C to exit)..."
+    echo ""
+    kubectl -n $SAMPLE_APP_NAMESPACE wait --for=condition=ready pod -l app=cosi-s3-test --timeout=60s || true
+    kubectl -n $SAMPLE_APP_NAMESPACE logs -f job/cosi-s3-test-job 2>/dev/null || {
+        print_warn "Job not ready yet. Check logs later with:"
+        echo "  kubectl -n $SAMPLE_APP_NAMESPACE logs -f job/cosi-s3-test-job"
+    }
+}
+
 # Show usage instructions
 show_usage() {
     print_header "Usage Instructions"
@@ -422,6 +484,9 @@ show_usage() {
     echo "  SECRET_NAME=\$(kubectl -n $SAMPLE_APP_NAMESPACE get bucketaccess $BUCKET_ACCESS_NAME -o jsonpath='{.status.credentialsSecretName}')"
     echo "  kubectl -n $SAMPLE_APP_NAMESPACE get secret \$SECRET_NAME -o jsonpath='{.data.BucketInfo}' | base64 --decode | jq ."
     echo ""
+    echo "Sample COSI app logs:"
+    echo "  kubectl -n $SAMPLE_APP_NAMESPACE logs -f job/cosi-s3-test-job"
+    echo ""
     echo "To cleanup COSI resources:"
     echo "  ./cleanup-cosi.sh"
     echo ""
@@ -448,6 +513,7 @@ main() {
     create_bucket_claim
     create_bucket_access
     get_bucket_credentials
+    deploy_cosi_sample_app
     show_usage
 
     print_info "COSI deployment complete!"
