@@ -65,6 +65,29 @@ Deploys an S3-compatible CephObjectStore with:
 ./cleanup-object-store.sh
 ```
 
+**Deploy COSI (Container Object Storage Interface):**
+```bash
+./deploy-cosi.sh
+```
+Deploys COSI support for Rook Ceph object storage with:
+- COSI API and Controller (CRDs and controller from kubernetes-sigs/container-object-storage-interface)
+- CephCOSIDriver for Rook integration
+- COSI user for bucket provisioning
+- BucketClass and BucketAccessClass for bucket configuration
+- BucketClaim to provision a bucket
+- BucketAccess to generate access credentials
+- Sample Python application (manifests/sample-apps/python-cosi-test/) that demonstrates COSI bucket consumption
+
+The sample app shows how applications consume COSI-provisioned buckets by:
+- Mounting the COSI secret at `/data/cosi/BucketInfo`
+- Parsing the JSON to extract endpoint, credentials, and bucket name
+- Using boto3 to perform S3 operations
+
+**Cleanup COSI:**
+```bash
+./cleanup-cosi.sh
+```
+
 **Uninstall Rook Ceph:**
 ```bash
 ./uninstall-rook-ceph.sh
@@ -231,6 +254,29 @@ The Python S3 test app:
 - Tests: bucket creation, object upload/download, listing, content verification
 - Source code (test_s3.py) and requirements.txt are embedded in ConfigMap and mounted into Job pod
 - The job installs dependencies via pip before running the test script
+
+### COSI Sample App Implementation
+
+The Python COSI S3 test app (manifests/sample-apps/python-cosi-test/):
+- Demonstrates proper COSI bucket consumption as per COSI specification
+- Mounts COSI secret at `/data/cosi/BucketInfo` (standard COSI mount point)
+- Reads and parses JSON from BucketInfo containing:
+  - `spec.bucketName`: The provisioned bucket name
+  - `spec.secretS3.endpoint`: S3 endpoint URL
+  - `spec.secretS3.accessKeyID`: Access key for authentication
+  - `spec.secretS3.accessSecretKey`: Secret key for authentication
+  - `spec.secretS3.region`: S3 region (defaults to us-east-1)
+- Uses boto3 with path-style addressing (required for Ceph RGW)
+- Tests S3 operations on the COSI-provisioned bucket: upload, download, list, delete
+- Source code (test_cosi_s3.py) and requirements.txt are embedded in ConfigMap
+- The Job manifest demonstrates two volume mounts:
+  1. ConfigMap volume with Python scripts at `/scripts`
+  2. COSI secret volume at `/data/cosi` (read-only, mode 0400)
+
+Key difference from traditional S3 apps:
+- Traditional: Credentials passed via environment variables or explicit secrets
+- COSI: Credentials read from standardized BucketInfo JSON at `/data/cosi/BucketInfo`
+- COSI provides portable, driver-agnostic bucket provisioning
 
 ### Thorough Cleanup Process (uninstall-rook-ceph-2.sh)
 
